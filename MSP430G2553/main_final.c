@@ -13,7 +13,7 @@ volatile unsigned int measure; //this is the difference in counts measured by th
 
 volatile unsigned int up=0; //helps the timer determine which edge
 
-int detection;
+unsigned int detection=0;
 
 //can these be switched to static within the timer?  they don't need to be available outside of the timer
 unsigned int measure_1 = 0;
@@ -82,7 +82,7 @@ void Init_moteur(){
 }
 //time en 0.1 sec
 void Avancer_robot(unsigned int vM ,unsigned int vA , unsigned int vB){
-    int i;
+
     Init_Timer1(vM,vA,vB);	// vB
     Init_moteur();
     P2OUT |= ( BIT5 ); // Dans ce cas P2.5 = 1 et P2.1 = 0 avancer
@@ -145,25 +145,37 @@ void Stop_robot (){
  */
 
 
+void InitUART(void)
+{
+    P1SEL |= (BIT1 | BIT2);                     // P1.1 = RXD, P1.2=TXD
+    P1SEL2 |= (BIT1 | BIT2);                    // P1.1 = RXD, P1.2=TXD
+    UCA0CTL1 = UCSWRST;                         // SOFTWARE RESET
+    UCA0CTL1 |= UCSSEL_3;                       // SMCLK (2 - 3)
 
+    UCA0CTL0 &= ~(UCPEN | UCMSB | UCDORM);
+    UCA0CTL0 &= ~(UC7BIT | UCSPB | UCMODE_3 | UCSYNC); // dta:8 stop:1 usci_mode3uartmode
+    UCA0CTL1 &= ~UCSWRST;                   // **Initialize USCI state machine**
+
+    UCA0BR0 = 104;                     			// 1MHz, OSC16, 9600 (8Mhz : 52) : 8/115k
+    UCA0BR1 = 0;                                // 1MHz, OSC16, 9600
+    UCA0MCTL = 10;
+
+    /* Enable USCI_A0 RX interrupt */
+    IE2 |= UCA0RXIE;
+}
 void get_measure() {
     UltraPortOut |= UltraFrontPin;
     up = 1; //Next catch on Timer1A0 should be rising edge - helps with capture timer
     UltraPortOut &= ~UltraFrontPin;
 }
-//envoyer
+//envoyer UART
 void TXdata( unsigned int c )
 {
     while (!(IFG2 & UCA0TXIFG));  // USCI_A0 TX buffer ready?
     UCA0TXBUF = c;              // TX -> RXed character
 }
 
-
-void communication_UART(){
-	if (RXD & BIT2)
-
-}
-//recevoir
+//recevoir UART
 unsigned int UART_RXdata()
 {
 	while(!(IFG2 & UCA0RXIFG)); 				//receptionUSCI_A0 ? --wait flag
@@ -178,6 +190,8 @@ void clignottement_Led(int nb){
 		__delay_cycles(1000000);
 	}
 }
+
+// Clignottement de la lED en fonction du message recu du msp430
 void communication_UART_Led(){
 	unsigned int RX;
 	RX= UART_RXdata();
@@ -246,15 +260,27 @@ int main(void)
   __enable_interrupt();
 
 /*
- * 	Gestion du bouton poussoir
+ * 	Gestion de l'UART
  */
-
+	if(CALBC1_1MHZ==0xFF || CALDCO_1MHZ==0xFF)
+	{
+		__bis_SR_register(LPM4_bits); // Low Power Mode #trap on Error
+	}
+	else
+	{
+		// Factory parameters
+		BCSCTL1 = CALBC1_1MHZ;
+		DCOCTL = CALDCO_1MHZ;
+	}
+	
+  InitUART();
+  
+  
   while (1) {
       __delay_cycles(50000);
-       get_measure();
        if (detection ==1)
     	   	  pilote();
-       
+       get_measure();
 
 
   }
